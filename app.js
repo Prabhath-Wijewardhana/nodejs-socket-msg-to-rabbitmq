@@ -85,7 +85,8 @@ function parseLocationPacket(data) {
     );
     const lat = ((data[10] & 0x0F) * 10**5 + (data[11] * 10**4) + (data[12] * 10**3) + (data[13] * 10**2) + (data[14] * 10) + data[15]) / 1800000;
     const lng = ((data[16] & 0x0F) * 10**5 + (data[17] * 10**4) + (data[18] * 10**3) + (data[19] * 10**2) + (data[20] * 10) + data[21]) / 1800000;
-    const status = data[22]; // Example status byte
+
+    const status = parseStatus(data.slice(24, 28)); // Assuming status bytes are at these positions
 
     return { date, lat, lng, status };
 }
@@ -93,6 +94,17 @@ function parseLocationPacket(data) {
 // Check if the packet is a location packet
 function isLocationPacket(data) {
     return data.length >= 24 && data[0] === 0x78 && data[1] === 0x78 && data[3] === 0x22;
+}
+
+// Parse status information from GT06 packet
+function parseStatus(statusBytes) {
+    const status = {
+        gpsTracking: (statusBytes[0] & 0x20) !== 0, // Example: bit 5 of first status byte
+        powerStatus: (statusBytes[1] & 0x01) !== 0, // Example: bit 0 of second status byte
+        batteryLevel: statusBytes[2], // Example: battery level in third status byte
+        sosAlarm: (statusBytes[3] & 0x04) !== 0 // Example: bit 2 of fourth status byte
+    };
+    return status;
 }
 
 // Create TCP server
