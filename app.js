@@ -1,7 +1,7 @@
 const net = require('net');
 const amqp = require('amqplib');
 
-const port = 3000; // TCP server port
+const port = 4000; // TCP server port
 const rabbitMQUrl = 'amqp://admin:bthXwgxDoXf85xd@rabbitmq.parallaxtec.dev'; // URL to your RabbitMQ server with authentication
 const queue = 'locationQueue'; // Name of the RabbitMQ queue
 
