@@ -1,0 +1,14 @@
+{
+  "name": "nodejs-socket-msg-to-rabbitmq",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "prabhath",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "amqplib": "^0.10.4"
+  }
+}
