@@ -1,7 +1,7 @@
 const net = require('net');
 const amqp = require('amqplib');
 
-const port = 4000; // TCP server port
+const port = 3000; // TCP server port
 const rabbitMQUrl = 'amqp://admin:bthXwgxDoXf85xd@rabbitmq.parallaxtec.dev'; // URL to your RabbitMQ server with authentication
 const queue = 'locationQueue'; // Name of the RabbitMQ queue
 
@@ -73,6 +73,28 @@ function createLoginResponse(data) {
     return response;
 }
 
+// Parse GT06 location packet
+function parseLocationPacket(data) {
+    const date = new Date(
+        2000 + data[4],
+        data[5] - 1,
+        data[6],
+        data[7],
+        data[8],
+        data[9]
+    );
+    const lat = ((data[10] & 0x0F) * 10**5 + (data[11] * 10**4) + (data[12] * 10**3) + (data[13] * 10**2) + (data[14] * 10) + data[15]) / 1800000;
+    const lng = ((data[16] & 0x0F) * 10**5 + (data[17] * 10**4) + (data[18] * 10**3) + (data[19] * 10**2) + (data[20] * 10) + data[21]) / 1800000;
+    const status = data[22]; // Example status byte
+
+    return { date, lat, lng, status };
+}
+
+// Check if the packet is a location packet
+function isLocationPacket(data) {
+    return data.length >= 24 && data[0] === 0x78 && data[1] === 0x78 && data[3] === 0x22;
+}
+
 // Create TCP server
 const server = net.createServer((socket) => {
     console.log('Client connected');
@@ -83,8 +105,11 @@ const server = net.createServer((socket) => {
             const response = createLoginResponse(data);
             socket.write(response);
             console.log('Login packet received, response sent');
+        } else if (isLocationPacket(data)) {
+            const location = parseLocationPacket(data);
+            sendToRabbitMQ(JSON.stringify(location));
+            console.log(`Location packet received: ${JSON.stringify(location)}`);
         } else {
-            sendToRabbitMQ(data.toString('hex')); // Send as hex string
             console.log(`Received: ${data.toString('hex')}`);
         }
     });
