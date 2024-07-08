@@ -158,6 +158,23 @@ function isLoginPacket(data) {
     // GT06 login packet starts with 0x78 0x78 and has a specific structure
     return data.length >= 16 && data[0] === 0x78 && data[1] === 0x78 && data[3] === 0x01;
 }
+function createLoginResponse(data) {
+    const response = Buffer.alloc(10);
+    response[0] = 0x78;
+    response[1] = 0x78;
+    response[2] = 0x05;
+    response[3] = 0x01;
+    response[4] = data[10]; // Copy the serial number
+    response[5] = data[11];
+
+    const crc = calculateCRC(response.slice(0, 6));
+    response[6] = (crc >> 8) & 0xFF; // CRC high byte
+    response[7] = crc & 0xFF; // CRC low byte
+
+    response[8] = 0x0D;
+    response[9] = 0x0A;
+    return response;
+}
 
 // Create TCP server
 const server = net.createServer((socket) => {
