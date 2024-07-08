@@ -16,14 +16,16 @@ const dbConfig = {
 let channel;
 let connection;
 let db;
-let deviceId = new Map();
+let deviceIdMap = new Map(); // Map to store device ID based on socket connection
+
 // Connect to MySQL
 async function connectMySQL() {
     try {
         db = await mysql.createConnection(dbConfig);
         console.log('Connected to MySQL');
     } catch (error) {
-        console.error('Failed to connect to MySQL', error);
+        console.error('Failed to connect to MySQL:', error.message);
+        console.error('Full error:', error);
         setTimeout(connectMySQL, 5000); // Retry after 5 seconds
     }
 }
@@ -74,10 +76,11 @@ async function sendToRabbitMQ(data) {
     if (db) {
         try {
             const parsedData = JSON.parse(data);
-            const { date, gpsInfoLength, satellites, lat, lng, speed, status, imei } = parsedData;
-            const query = 'INSERT INTO location_data (date, gps_info_length, satellites, latitude, longitude, speed, status, imei) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
-            const values = [date, gpsInfoLength, satellites, lat, lng, speed, JSON.stringify(status), imei];
+            const { date, gpsInfoLength, satellites, lat, lng, speed, status, deviceId } = parsedData;
+            const query = 'INSERT INTO location_data (date, gps_info_length, satellites, latitude, longitude, speed, status, device_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+            const values = [date, gpsInfoLength, satellites, lat, lng, speed, JSON.stringify(status), deviceId];
             await db.execute(query, values);
+            console.log('Data saved to MySQL');
         } catch (error) {
             console.error('Failed to save data to MySQL', error);
         }
@@ -101,37 +104,13 @@ function calculateCRC(data) {
 }
 
 // Parse GT06 login packet
-function isLoginPacket(data) {
-    const deviceId = data.slice(4, 12).toString('hex');
-    console.log(deviceId);
-    // GT06 login packet starts with 0x78 0x78 and has a specific structure
-    return data.length >= 16 && data[0] === 0x78 && data[1] === 0x78 && data[3] === 0x01;
-}
-
-// Create login response packet
-function createLoginResponse(data) {
-    const response = Buffer.alloc(10);
-    response[0] = 0x78;
-    response[1] = 0x78;
-    response[2] = 0x05;
-    response[3] = 0x01;
-    response[4] = data[10]; // Copy the serial number
-    response[5] = data[11];
-
-    const crc = calculateCRC(response.slice(0, 6));
-    response[6] = (crc >> 8) & 0xFF; // CRC high byte
-    response[7] = crc & 0xFF; // CRC low byte
-
-    response[8] = 0x0D;
-    response[9] = 0x0A;
-    return response;
+function parseLoginPacket(data) {
+    const deviceId = data.slice(4, 12).toString('hex'); // Example: Extracting device ID from login packet
+    return deviceId;
 }
 
 // Parse GT06 location packet
-function parseLocationPacket(data) {
-
-    const imei = deviceId;
-
+function parseLocationPacket(data, deviceId) {
     const date = new Date(
         2000 + data[4],
         data[5] - 1,
@@ -162,7 +141,7 @@ function parseLocationPacket(data) {
         course: courseStatus & 0x03FF // lower 10 bits for course
     };
 
-    return { date, gpsInfoLength, satellites, lat, lng, speed, status,imei };
+    return { date, gpsInfoLength, satellites, lat, lng, speed, status, deviceId };
 }
 
 // Check if the packet is a location packet
@@ -175,17 +154,6 @@ function isStatusPacket(data) {
     return data.length >= 24 && data[0] === 0x78 && data[1] === 0x78 && data[3] === 0x13;
 }
 
-// Parse status information from GT06 packet
-function parseStatus(statusBytes) {
-    const status = {
-        gpsTracking: (statusBytes[0] & 0x20) !== 0, // Example: bit 5 of first status byte
-        powerStatus: (statusBytes[1] & 0x01) !== 0, // Example: bit 0 of second status byte
-        batteryLevel: statusBytes[2], // Example: battery level in third status byte
-        sosAlarm: (statusBytes[3] & 0x04) !== 0 // Example: bit 2 of fourth status byte
-    };
-    return status;
-}
-
 // Create TCP server
 const server = net.createServer((socket) => {
     console.log('Client connected');
@@ -193,13 +161,17 @@ const server = net.createServer((socket) => {
     // Log data received from the client
     socket.on('data', (data) => {
         if (isLoginPacket(data)) {
+            const deviceId = parseLoginPacket(data);
+            deviceIdMap.set(socket, deviceId);
             const response = createLoginResponse(data);
             socket.write(response);
             console.log(`Received: ${data.toString('hex')}`);
             console.log('Login packet received, response sent');
+            console.log(`Device ID: ${deviceId}`);
         } else if (isLocationPacket(data)) {
-            const location = parseLocationPacket(data);
-            console.log(`IMEI: ${location.imei}`);
+            const deviceId = deviceIdMap.get(socket);
+            const location = parseLocationPacket(data, deviceId);
+            console.log(`Device ID: ${location.deviceId}`);
             console.log(`Date: ${location.date}`);
             console.log(`GPS Info Length: ${location.gpsInfoLength}`);
             console.log(`Satellites: ${location.satellites}`);
@@ -223,11 +195,13 @@ const server = net.createServer((socket) => {
     // Handle client disconnect
     socket.on('end', () => {
         console.log('Client disconnected');
+        deviceIdMap.delete(socket); // Remove device ID when client disconnects
     });
 
     // Handle errors
     socket.on('error', (err) => {
         console.error(`Socket error: ${err.message}`);
+        deviceIdMap.delete(socket); // Remove device ID on error
     });
 });
 
