@@ -128,7 +128,7 @@ function createLoginResponse(data) {
 // Parse GT06 location packet
 function parseLocationPacket(data) {
 
-    const imei = data.slice(2, 10).toString('hex');
+    const imei = data[10];
 
     const date = new Date(
         2000 + data[4],
