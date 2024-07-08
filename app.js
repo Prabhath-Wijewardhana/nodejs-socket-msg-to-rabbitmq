@@ -16,7 +16,7 @@ const dbConfig = {
 let channel;
 let connection;
 let db;
-
+let deviceId = new Map();
 // Connect to MySQL
 async function connectMySQL() {
     try {
@@ -102,6 +102,8 @@ function calculateCRC(data) {
 
 // Parse GT06 login packet
 function isLoginPacket(data) {
+    const deviceId = data.slice(4, 12).toString('hex');
+    console.log(deviceId);
     // GT06 login packet starts with 0x78 0x78 and has a specific structure
     return data.length >= 16 && data[0] === 0x78 && data[1] === 0x78 && data[3] === 0x01;
 }
@@ -128,7 +130,7 @@ function createLoginResponse(data) {
 // Parse GT06 location packet
 function parseLocationPacket(data) {
 
-    const imei = data[10];
+    const imei = deviceId;
 
     const date = new Date(
         2000 + data[4],
