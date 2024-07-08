@@ -154,6 +154,11 @@ function isStatusPacket(data) {
     return data.length >= 24 && data[0] === 0x78 && data[1] === 0x78 && data[3] === 0x13;
 }
 
+function isLoginPacket(data) {
+    // GT06 login packet starts with 0x78 0x78 and has a specific structure
+    return data.length >= 16 && data[0] === 0x78 && data[1] === 0x78 && data[3] === 0x01;
+}
+
 // Create TCP server
 const server = net.createServer((socket) => {
     console.log('Client connected');
