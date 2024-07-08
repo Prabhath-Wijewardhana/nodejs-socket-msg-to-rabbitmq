@@ -77,7 +77,7 @@ async function sendToRabbitMQ(data) {
         try {
             const parsedData = JSON.parse(data);
             const { date, gpsInfoLength, satellites, lat, lng, speed, status, deviceId } = parsedData;
-            const query = 'INSERT INTO location_data (date, gps_info_length, satellites, latitude, longitude, speed, status, device_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+            const query = 'INSERT INTO location_data (date, gps_info_length, satellites, latitude, longitude, speed, status, imei) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
             const values = [date, gpsInfoLength, satellites, lat, lng, speed, JSON.stringify(status), deviceId];
             await db.execute(query, values);
             console.log('Data saved to MySQL');
@@ -105,8 +105,7 @@ function calculateCRC(data) {
 
 // Parse GT06 login packet
 function parseLoginPacket(data) {
-    const deviceId = data.slice(4, 12).toString('hex'); // Example: Extracting device ID from login packet
-    return deviceId;
+    return data.slice(4, 12).toString('hex'); // Example: Extracting device ID from login packet
 }
 
 // Parse GT06 location packet
