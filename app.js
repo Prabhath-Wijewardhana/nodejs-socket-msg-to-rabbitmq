@@ -74,11 +74,10 @@ async function sendToRabbitMQ(data) {
     if (db) {
         try {
             const parsedData = JSON.parse(data);
-            const { date, gpsInfoLength, satellites, lat, lng, speed, status } = parsedData;
-            const query = 'INSERT INTO location_data (date, gps_info_length, satellites, latitude, longitude, speed, status) VALUES (?, ?, ?, ?, ?, ?, ?)';
-            const values = [date, gpsInfoLength, satellites, lat, lng, speed, JSON.stringify(status)];
+            const { date, gpsInfoLength, satellites, lat, lng, speed, status, imei } = parsedData;
+            const query = 'INSERT INTO location_data (date, gps_info_length, satellites, latitude, longitude, speed, status, imei) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+            const values = [date, gpsInfoLength, satellites, lat, lng, speed, JSON.stringify(status), imei];
             await db.execute(query, values);
-            console.log('Data saved to MySQL');
         } catch (error) {
             console.error('Failed to save data to MySQL', error);
         }
@@ -128,6 +127,9 @@ function createLoginResponse(data) {
 
 // Parse GT06 location packet
 function parseLocationPacket(data) {
+
+    const imei = data.slice(2, 10).toString('hex');
+
     const date = new Date(
         2000 + data[4],
         data[5] - 1,
@@ -158,7 +160,7 @@ function parseLocationPacket(data) {
         course: courseStatus & 0x03FF // lower 10 bits for course
     };
 
-    return { date, gpsInfoLength, satellites, lat, lng, speed, status };
+    return { date, gpsInfoLength, satellites, lat, lng, speed, status,imei };
 }
 
 // Check if the packet is a location packet
@@ -195,6 +197,7 @@ const server = net.createServer((socket) => {
             console.log('Login packet received, response sent');
         } else if (isLocationPacket(data)) {
             const location = parseLocationPacket(data);
+            console.log(`IMEI: ${location.imei}`);
             console.log(`Date: ${location.date}`);
             console.log(`GPS Info Length: ${location.gpsInfoLength}`);
             console.log(`Satellites: ${location.satellites}`);
