@@ -9,6 +9,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "amqplib": "^0.10.4"
+    "amqplib": "^0.10.4",
+    "mysql2-promise": "^0.1.4"
   }
 }

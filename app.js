@@ -17,6 +17,7 @@ let channel;
 let connection;
 let db;
 let deviceIdMap = new Map(); // Map to store device ID based on socket connection
+let server; // TCP server instance
 
 // Connect to MySQL
 async function connectMySQL() {
@@ -57,6 +58,21 @@ async function connectRabbitMQ() {
         console.error('Failed to connect to RabbitMQ', error);
         setTimeout(connectRabbitMQ, 5000); // Retry after 5 seconds
     }
+}
+
+// Close and restart connections
+function restartConnections() {
+    if (connection) {
+        connection.close();
+        connection = null;
+    }
+    if (db) {
+        db.end();
+        db = null;
+    }
+    connectRabbitMQ();
+    connectMySQL();
+    console.log('Connections restarted');
 }
 
 // Send data to RabbitMQ and MySQL
@@ -176,59 +192,85 @@ function createLoginResponse(data) {
 }
 
 // Create TCP server
-const server = net.createServer((socket) => {
-    console.log('Client connected');
+function createServer() {
+    server = net.createServer((socket) => {
+        console.log('Client connected');
 
-    // Log data received from the client
-    socket.on('data', (data) => {
-        if (isLoginPacket(data)) {
-            const deviceId = parseLoginPacket(data);
-            deviceIdMap.set(socket, deviceId);
-            const response = createLoginResponse(data);
-            socket.write(response);
-            console.log(`Received: ${data.toString('hex')}`);
-            console.log('Login packet received, response sent');
-            console.log(`Device ID: ${deviceId}`);
-        } else if (isLocationPacket(data)) {
-            const deviceId = deviceIdMap.get(socket);
-            const location = parseLocationPacket(data, deviceId);
-            console.log(`Device ID: ${location.deviceId}`);
-            console.log(`Date: ${location.date}`);
-            console.log(`GPS Info Length: ${location.gpsInfoLength}`);
-            console.log(`Satellites: ${location.satellites}`);
-            console.log(`Latitude: ${location.lat}`);
-            console.log(`Longitude: ${location.lng}`);
-            console.log(`Speed: ${location.speed}`);
-            console.log(`Status: ${JSON.stringify(location.status)}`);
-            sendToRabbitMQ(JSON.stringify(location));
-            console.log(`Received: ${data.toString('hex')}`);
-            console.log(`Location packet received: ${JSON.stringify(location)}`);
-        } else if (isStatusPacket(data)) {
-            const status = parseStatus(data.slice(24, 28));
-            console.log(`Status: ${JSON.stringify(status)}`);
-            sendToRabbitMQ(JSON.stringify(status));
-            console.log(`Status packet received: ${JSON.stringify(status)}`);
-        } else {
-            console.log(`Received: ${data.toString('hex')}`);
-        }
+        // Log data received from the client
+        socket.on('data', (data) => {
+            if (isLoginPacket(data)) {
+                const deviceId = parseLoginPacket(data);
+                deviceIdMap.set(socket, deviceId);
+                const response = createLoginResponse(data);
+                socket.write(response);
+                console.log(`Received: ${data.toString('hex')}`);
+                console.log('Login packet received, response sent');
+                console.log(`Device ID: ${deviceId}`);
+            } else if (isLocationPacket(data)) {
+                const deviceId = deviceIdMap.get(socket);
+                const location = parseLocationPacket(data, deviceId);
+                console.log(`Device ID: ${location.deviceId}`);
+                console.log(`Date: ${location.date}`);
+                console.log(`GPS Info Length: ${location.gpsInfoLength}`);
+                console.log(`Satellites: ${location.satellites}`);
+                console.log(`Latitude: ${location.lat}`);
+                console.log(`Longitude: ${location.lng}`);
+                console.log(`Speed: ${location.speed}`);
+                console.log(`Status: ${JSON.stringify(location.status)}`);
+                sendToRabbitMQ(JSON.stringify(location));
+                console.log(`Received: ${data.toString('hex')}`);
+                console.log(`Location packet received: ${JSON.stringify(location)}`);
+            } else if (isStatusPacket(data)) {
+                const status = parseStatus(data.slice(24, 28));
+                console.log(`Status: ${JSON.stringify(status)}`);
+                sendToRabbitMQ(JSON.stringify(status));
+                console.log(`Status packet received: ${JSON.stringify(status)}`);
+            } else {
+                console.log(`Received: ${data.toString('hex')}`);
+            }
+        });
+
+        // Handle client disconnect
+        socket.on('end', () => {
+            console.log('Client disconnected');
+            deviceIdMap.delete(socket); // Remove device ID when client disconnects
+        });
+
+        // Handle errors
+        socket.on('error', (err) => {
+            console.error(`Socket error: ${err.message}`);
+            deviceIdMap.delete(socket); // Remove device ID on error
+        });
     });
 
-    // Handle client disconnect
-    socket.on('end', () => {
-        console.log('Client disconnected');
-        deviceIdMap.delete(socket); // Remove device ID when client disconnects
+    server.listen(port, () => {
+        console.log(`Server is listening on port ${port}`);
+        connectRabbitMQ(); // Connect to RabbitMQ when the server starts
+        connectMySQL(); // Connect to MySQL when the server starts
     });
 
-    // Handle errors
-    socket.on('error', (err) => {
-        console.error(`Socket error: ${err.message}`);
-        deviceIdMap.delete(socket); // Remove device ID on error
+    server.on('error', (err) => {
+        console.error('Server error:', err);
+        setTimeout(createServer, 5000); // Retry server creation after 5 seconds
     });
-});
+}
+
+// Close and restart the server
+function restartServer() {
+    if (server) {
+        server.close(() => {
+            console.log('Server closed');
+            createServer();
+        });
+    }
+}
 
 // Start the server
-server.listen(port, () => {
-    console.log(`Server is listening on port ${port}`);
-    connectRabbitMQ(); // Connect to RabbitMQ when the server starts
-    connectMySQL(); // Connect to MySQL when the server starts
-});
+createServer();
+
+// Restart connections every 10 minutes
+setInterval(restartConnections, 10 * 60 * 1000);
+
+// Restart the server every 10 minutes
+setInterval(restartServer, 10 * 60 * 1000);
+
