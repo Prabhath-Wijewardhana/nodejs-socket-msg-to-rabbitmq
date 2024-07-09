@@ -70,6 +70,10 @@ function restartConnections() {
         db.end();
         db = null;
     }
+    server.close(() => {
+        console.log('Server closed');
+        createServer();
+    });
     connectRabbitMQ();
     connectMySQL();
     console.log('Connections restarted');
