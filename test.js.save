@@ -1,0 +1,132 @@
+const net = require('net');
+const mysql = require('mysql2');
+
+const port = 4000; // TCP server port
+
+// MySQL database configuration
+const dbConfig = {
+    host: '68.183.225.237',
+    user: 'prabath',
+    password: '1w%e#R^14JW@0*6T',
+    database: 'gto6'
+};
+
+// Create MySQL connection pool
+const pool = mysql.createPool(dbConfig);
+
+// Function to save data to MySQL
+function saveToDatabase(parsedData) {
+    const query = 'INSERT INTO location_data (date, gps_info_length, satellites, latitude, longitude, speed, status, imei) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+
+    const values = [
+        parsedData.date,
+        parsedData.gps_info_length,
+        parsedData.satellites,
+        parsedData.latitude,
+        parsedData.longitude,
+        parsedData.speed,
+        parsedData.status,
+        parsedData.imei
+    ];
+
+    pool.query(query, values, (error, results) => {
+        if (error) {
+            console.error('Failed to save data to MySQL', error);
+        } else {
+            console.log('Data saved to MySQL:', values);
+        }
+    });
+}
+
+// Function to parse login message
+function parseLoginMessage(data) {
+    const imei = data.slice(4, 12).toString('hex');
+    return {
+        imei
+    };
+}
+
+// Function to calculate CRC16
+function calculateCRC16(buffer) {
+    let crc = 0xFFFF;
+    for (let i = 0; i < buffer.length; i++) {
+        crc ^= buffer[i] & 0xFF;
+        for (let j = 0; j < 8; j++) {
+            if ((crc & 1) !== 0) {
+                crc = (crc >> 1) ^ 0xA001;
+            } else {
+                crc = crc >> 1;
+            }
+        }
+    }
+    return crc;
+}
+
+// Function to handle login message and respond
+function handleLogin(socket, data) {
+    const parsedData = parseLoginMessage(data);
+    console.log(`Device logged in with IMEI: ${parsedData.imei}`);
+
+    // Create the response without the CRC and stop bits
+    const responseWithoutCRC = Buffer.from([
+        0x78, 0x78, // Start bit
+        0x05,       // Length
+        0x01,       // Protocol number (Login response)
+        data[10], data[11] // Serial number from the login message
+    ]);
+
+    // Calculate CRC16 for the response
+    const crc = calculateCRC16(responseWithoutCRC);
+    const crcBuffer = Buffer.from([(crc >> 8) & 0xFF, crc & 0xFF]);
+
+    // Complete response with CRC and stop bits
+    const response = Buffer.concat([responseWithoutCRC, crcBuffer, Buffer.from([0x0D, 0x0A])]);
+
+    console.log(`Sending response: ${response.toString('hex')}`);
+    socket.write(response);
+
+    // Save login info to database
+    saveToDatabase({
+        date: new Date(),
+        gps_info_length: 0,
+        satellites: 0,
+        latitude: 0,
+        longitude: 0,
+        speed: 0,
+        status: 0,
+        imei: parsedData.imei
+    });
+}
+
+// Create TCP server
+const server = net.createServer((socket) => {
+    console.log('Client connected');
+
+    // Log data received from the client
+    socket.on('data', (data) => {
+        console.log(`Received: ${data.toString('hex')}`);
+
+        if (data.length >= 16 && data[3] === 0x01) {
+            // Handle login message
+            handleLogin(socket, data);
+        } else {
+            // Handle other messages (parse and save to DB as needed)
+            console.log(`Received non-login message: ${data.toString('hex')}`);
+        }
+    });
+
+    // Handle client disconnect
+    socket.on('end', () => {
+        console.log('Client disconnected');
+    });
+
+    // Handle errors
+    socket.on('error', (err) => {
+        console.error(`Socket error: ${err.message}`);
+    });
+});
+
+// Start the server
+server.listen(port, () => {
+    console.log(`Server is listening on port ${port}`);
+});
